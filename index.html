@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Year 6 中英文溫書應用程式</title>
+    <!-- 引入 Tailwind CSS CDN 以實現響應式設計和美觀 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 設置全局字體為 Inter，確保閱讀性 */
+        body { font-family: 'Inter', sans-serif; background-color: #f0f8ff; } 
+        /* 自訂滾動條樣式，讓它更活潑 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #E0F7FA; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #38bdf8; border-radius: 10px; }
+        .card-shadow { box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        /* 隱藏原生數字輸入的箭頭 */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        /* 為單字卡添加 3D 效果 */
+        .flashcard {
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+            height: 100%;
+            width: 100%;
+        }
+        .flashcard.flipped {
+            transform: rotateY(180deg);
+        }
+        .flashcard-face {
+            position: absolute;
+            backface-visibility: hidden;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 1rem;
+            padding: 1.5rem;
+        }
+        .flashcard-back {
+            transform: rotateY(180deg);
+        }
+        .block-button {
+            transition: all 0.2s;
+            box-shadow: 0 4px #0056b3; /* 藍色按鈕陰影 */
+            margin-bottom: 4px; /* 防止陰影被遮擋 */
+        }
+        .block-button:active {
+            box-shadow: 0 1px #0056b3;
+            transform: translateY(3px);
+        }
+        /* 模式 C 積木使用不同的顏色和陰影 */
+        .dictation-block {
+            box-shadow: 0 4px #b45309; /* 橘色按鈕陰影 */
+        }
+        .dictation-block:active {
+            box-shadow: 0 1px #b45309;
+        }
+
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-4xl font-extrabold text-sky-700 mb-6 text-center">
+            🌟 Year 6 中英文溫書小幫手 🌟
+        </h1>
+
+        <!-- 控制面板：語音選擇和 Level 選擇 -->
+        <div class="bg-white p-4 rounded-xl card-shadow mb-6 flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0 md:space-x-4">
+            
+            <!-- 語音發音系統 -->
+            <div class="w-full md:w-1/2">
+                <label for="voice-select" class="block text-sm font-medium text-gray-700 mb-1">📢 選擇發音老師 (建議選 UK/US 英語):</label>
+                <select id="voice-select" class="w-full p-2 border border-sky-300 rounded-lg focus:ring-sky-500 focus:border-sky-500 bg-sky-100 text-sky-800">
+                    <option value="">正在加載語音...</option>
+                </select>
+            </div>
+
+            <!-- 分組學習功能 (模式 A 專用) -->
+            <div class="w-full md:w-1/2">
+                <label for="level-select" class="block text-sm font-medium text-gray-700 mb-1">📚 選擇練習組別 (Level):</label>
+                <select id="level-select" class="w-full p-2 border border-yellow-300 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 bg-yellow-100 text-yellow-800" onchange="loadLevelData()">
+                    <option value="all">全部單字</option>
+                    <!-- Levels will be populated by JS -->
+                </select>
+            </div>
+        </div>
+
+        <!-- 模式切換 Tabs -->
+        <div class="flex bg-gray-200 rounded-xl mb-6 p-1">
+            <button id="tab-study" class="flex-1 py-3 text-lg font-bold rounded-lg transition-all" onclick="changeMode('study')">
+                模式 A (學習單字)
+            </button>
+            <button id="tab-block" class="flex-1 py-3 text-lg font-bold rounded-lg transition-all" onclick="changeMode('block')">
+                模式 B (中文句式重組)
+            </button>
+            <button id="tab-dictation" class="flex-1 py-3 text-lg font-bold rounded-lg transition-all" onclick="changeMode('dictation')">
+                模式 C (英文聽寫重組)
+            </button>
+        </div>
+
+        <!-- 學習模式 A (單字卡) -->
+        <div id="mode-study" class="hidden">
+            <div class="h-[400px] bg-white rounded-xl card-shadow relative overflow-hidden p-6 md:p-10">
+                <div id="flashcard-container" class="flashcard cursor-pointer" onclick="flipCard()">
+                    <!-- 正面：中文 -->
+                    <div id="card-front" class="flashcard-face bg-sky-100 border-4 border-sky-500 text-center">
+                        <p class="text-xl text-gray-500 font-semibold mb-2">中文 (點擊翻轉)</p>
+                        <p id="card-cn-text" class="text-7xl font-black text-blue-700">飯廳</p>
+                        <p id="card-syllable-text" class="text-xl text-yellow-600 mt-4 hidden">fàn-tīng</p>
+                    </div>
+                    <!-- 背面：中英詞語和相對照例句 (已更新) -->
+                    <div id="card-back" class="flashcard-face bg-yellow-100 border-4 border-yellow-500 text-center justify-start py-8">
+                        <p class="text-xl text-gray-500 font-semibold mb-1">英文詞語 (English)</p>
+                        <p id="card-en-text" class="text-5xl font-black text-red-700 mb-4">dining room</p>
+                        
+                        <p class="text-xl text-gray-500 font-semibold mb-1">中文詞語 (Chinese)</p>
+                        <p id="card-cn-back-text" class="text-3xl font-bold text-blue-700 mb-6">飯廳</p>
+                        
+                        <p class="text-sm font-semibold text-gray-700 mb-1 border-b border-yellow-400 w-full max-w-sm">對照例句 (Corresponding Examples):</p>
+                        <div class="space-y-3 w-full max-w-sm text-left px-4">
+                            <p id="card-cn-example-text" class="text-lg text-gray-700 font-medium bg-yellow-200/50 p-2 rounded-lg">媽媽在飯廳喝茶</p>
+                            <p id="card-en-example-text" class="text-lg text-gray-800 italic bg-yellow-300/50 p-2 rounded-lg">Mum is having tea in the dining room.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 學習模式 A 控制區 -->
+            <div class="mt-6 flex flex-wrap justify-center gap-3">
+                <button class="flex-1 p-3 bg-red-500 text-white font-bold rounded-lg shadow-lg hover:bg-red-600 transition min-w-[120px] block-button" onclick="prevCard()">
+                    <i class="fas fa-arrow-left"></i> 上一個
+                </button>
+                <button class="flex-1 p-3 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 transition min-w-[120px] block-button" onclick="speakCurrentWord()">
+                    <i class="fas fa-volume-up"></i> 讀出英文
+                </button>
+                <button class="flex-1 p-3 bg-indigo-500 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-600 transition min-w-[120px] block-button" onclick="toggleSyllable()">
+                    顯示/隱藏音節
+                </button>
+                <button class="flex-1 p-3 bg-red-500 text-white font-bold rounded-lg shadow-lg hover:bg-red-600 transition min-w-[120px] block-button" onclick="nextCard()">
+                    下一個 <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+            <p id="study-progress" class="text-center mt-4 text-gray-600">進度: 1 / 10</p>
+        </div>
+
+        <!-- 學習模式 B (積木 - 句式重組) -->
+        <div id="mode-block" class="hidden">
+            <div class="bg-white p-6 md:p-8 rounded-xl card-shadow">
+                <h2 class="text-2xl font-bold text-sky-700 mb-4">🏠 模式 B: 中文句式積木重組 (Grammar)</h2>
+                <div class="bg-yellow-100 p-4 rounded-lg mb-4 border-l-4 border-yellow-500">
+                    <p class="text-sm font-semibold text-yellow-800">🎯 句型結構:</p>
+                    <p id="block-grammar-rule" class="text-base text-yellow-900 mt-1">S + 在 + Location (表示位置)</p>
+                </div>
+                
+                <!-- 待翻譯的英文句子 (用於參考) -->
+                <div class="text-center p-6 bg-sky-500 text-white rounded-lg mb-6">
+                    <p id="block-en-sentence" class="text-3xl font-bold">Mum is having tea in dining room.</p>
+                </div>
+
+                <!-- 答案區 -->
+                <div class="p-4 bg-gray-100 rounded-lg min-h-[80px] mb-6 border-2 border-dashed border-gray-300">
+                    <div id="block-answer-area" class="flex flex-wrap gap-2">
+                        <!-- 重組後的中文積木將會放在這裡 -->
+                    </div>
+                </div>
+
+                <!-- 隨機積木區 -->
+                <div class="p-4 bg-white rounded-lg border-2 border-sky-300">
+                    <p class="text-sm font-medium text-gray-700 mb-2">點擊積木來重組中文句子:</p>
+                    <div id="block-scrambled-area" class="flex flex-wrap gap-2">
+                        <!-- 隨機積木將會放在這裡 -->
+                    </div>
+                </div>
+
+                <!-- 積木模式控制按鈕 -->
+                <div class="mt-6 flex flex-wrap justify-center gap-3">
+                    <button class="p-3 bg-gray-400 text-white font-bold rounded-lg shadow-lg hover:bg-gray-500 transition block-button" onclick="resetBlockGame()">
+                        重設
+                    </button>
+                    <button class="p-3 bg-red-500 text-white font-bold rounded-lg shadow-lg hover:bg-red-600 transition block-button" onclick="checkBlockAnswer()">
+                        檢查答案
+                    </button>
+                    <button class="p-3 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 transition block-button" onclick="loadNextGrammar()">
+                        下一個句子
+                    </button>
+                </div>
+                <p id="block-message" class="text-center mt-4 text-xl font-semibold min-h-[30px]"></p>
+            </div>
+        </div>
+
+        <!-- 學習模式 C (聽寫 - 英文句子重組) -->
+        <div id="mode-dictation" class="hidden">
+            <div class="bg-white p-6 md:p-8 rounded-xl card-shadow">
+                <h2 class="text-2xl font-bold text-yellow-700 mb-4">🎧 模式 C: 英文聽寫重組 (10 題一回合)</h2>
+
+                <!-- 進度和分數顯示 -->
+                <div class="flex justify-between items-center mb-6 p-3 bg-indigo-100 rounded-lg border-2 border-indigo-400">
+                    <p id="dictation-progress" class="text-lg font-semibold text-indigo-800">進度: 1 / 10</p>
+                    <p id="dictation-score-display" class="text-2xl font-black text-yellow-500">
+                        分數: 0 / 10 ⭐
+                    </p>
+                </div>
+                
+                <!-- 提示區 (中文句子) -->
+                <div class="text-center p-6 bg-yellow-500 text-white rounded-lg mb-6">
+                    <p class="text-xl font-semibold mb-2">👂 請仔細聽英文發音，並根據中文提示重組英文句子：</p>
+                    <!-- 這裡顯示中文句子作為提示 -->
+                    <p id="dictation-cn-word" class="text-3xl font-black">弟弟在客廳玩電腦遊戲</p>
+                    <button class="mt-4 p-3 bg-white text-yellow-600 font-bold rounded-full shadow-lg hover:bg-gray-100 transition block-button" onclick="speakCurrentDictation()">
+                        <i class="fas fa-volume-up"></i> 再聽一次英文
+                    </button>
+                </div>
+
+                <!-- 答案區 -->
+                <div class="p-4 bg-gray-100 rounded-lg min-h-[80px] mb-6 border-2 border-dashed border-gray-300">
+                    <div id="dictation-answer-area" class="flex flex-wrap gap-2">
+                        <!-- 重組後的英文積木將會放在這裡 -->
+                    </div>
+                </div>
+
+                <!-- 隨機積木區 (英文單字) -->
+                <div class="p-4 bg-white rounded-lg border-2 border-yellow-300">
+                    <p class="text-sm font-medium text-gray-700 mb-2">點擊積木來重組英文句子:</p>
+                    <div id="dictation-scrambled-area" class="flex flex-wrap gap-2">
+                        <!-- 隨機英文積木將會放在這裡 -->
+                    </div>
+                </div>
+
+                <!-- 聽寫模式控制按鈕 -->
+                <div class="mt-6 flex flex-wrap justify-center gap-3">
+                    <button class="p-3 bg-gray-400 text-white font-bold rounded-lg shadow-lg hover:bg-gray-500 transition block-button" onclick="resetDictationGame()">
+                        重新開始 10 題
+                    </button>
+                    <button id="dictation-check-button" class="p-3 bg-red-500 text-white font-bold rounded-lg shadow-lg hover:bg-red-600 transition block-button" onclick="checkDictationAnswer()">
+                        檢查答案
+                    </button>
+                    <button id="dictation-next-button" class="hidden p-3 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 transition block-button" onclick="loadNextDictation()">
+                        下一題
+                    </button>
+                </div>
+                <p id="dictation-message" class="text-center mt-4 text-xl font-semibold min-h-[30px]"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Font Awesome Icons (用於音量圖標等) -->
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+
+    <script>
+        // === 應用程式核心資料 ===
+        const vocabularyData = [
+            // 單字學習清單 (已更新結構：新增 en_example 並重命名 example 為 cn_example)
+            { cn: "飯廳", en: "dining room", cn_example: "媽媽在飯廳喝茶", en_example: "Mum is having tea in the dining room.", syllable: "di-ning room" },
+            { cn: "沙發", en: "sofa", cn_example: "客廳裏有沙發", en_example: "The living room has a sofa.", syllable: "so-fa" },
+            { cn: "窗", en: "window", cn_example: "請打開窗", en_example: "Please open the window.", syllable: "win-dow" },
+            { cn: "睡房", en: "bedroom", cn_example: "弟弟在睡房", en_example: "Younger brother is in the bedroom.", syllable: "bed-room" },
+            { cn: "電視機", en: "television", cn_example: "客廳裏有電視機", en_example: "There is a television in the living room.", syllable: "tel-e-vi-sion" },
+            { cn: "燈", en: "light", cn_example: "睡房裏有燈", en_example: "There is a light in the bedroom.", syllable: "light" },
+            { cn: "東", en: "east", cn_example: "東方日出", en_example: "The sun rises in the east.", syllable: "east" },
+            { cn: "南", en: "south", cn_example: "鳥兒飛向南邊", en_example: "The birds fly to the south.", syllable: "south" },
+            { cn: "西", en: "west", cn_example: "西方日落", en_example: "The sun sets in the west.", syllable: "west" },
+            { cn: "北", en: "north", cn_example: "北方很冷", en_example: "It is cold in the north.", syllable: "north" },
+            { cn: "廚房", en: "kitchen", cn_example: "爸爸在廚房洗碗", en_example: "Dad is washing dishes in the kitchen.", syllable: "kitch-en" },
+            { cn: "電話", en: "telephone", cn_example: "打電話給媽媽", en_example: "Call Mum on the telephone.", syllable: "tel-e-phone" },
+            { cn: "書架", en: "bookcase", cn_example: "書房裏有書架", en_example: "My study room has a bookcase.", syllable: "book-case" },
+            { cn: "浴室", en: "bathroom", cn_example: "我在浴室洗澡", en_example: "I am taking a bath in the bathroom.", syllable: "bath-room" },
+            { cn: "茶几", en: "coffee table", cn_example: "茶几上放著茶杯", en_example: "The cup is on the coffee table.", syllable: "co-ffee ta-ble" },
+            { cn: "雪櫃", en: "fridge", cn_example: "雪櫃裏有食物", en_example: "There is food in the fridge.", syllable: "fridge" },
+            { cn: "客廳", en: "living room", cn_example: "弟弟在客廳玩電腦遊戲", en_example: "Younger brother is playing computer games in the living room.", syllable: "li-ving room" },
+            { cn: "廁所", en: "washroom", cn_example: "哥哥在廁所", en_example: "Elder brother is in the washroom.", syllable: "wash-room" },
+            { cn: "門", en: "door", cn_example: "請關門", en_example: "Please close the door.", syllable: "door" },
+            { cn: "烤箱", en: "oven", cn_example: "烤箱裏烤著麵包", en_example: "The bread is baking in the oven.", syllable: "ov-en" },
+            { cn: "食物", en: "food", cn_example: "這裏有美味的食物", en_example: "There is delicious food here.", syllable: "food" },
+            { cn: "一早", en: "early", cn_example: "我一早就起床", en_example: "I wake up early in the morning.", syllable: "ear-ly" },
+            { cn: "就", en: "then", cn_example: "一做完功課就去踢球", en_example: "After finishing homework, he then goes to play football.", syllable: "then" },
+            { cn: "佈置", en: "decorate", cn_example: "佈置房間", en_example: "Decorate the room.", syllable: "dec-o-rate" },
+            { cn: "開始", en: "begin", cn_example: "開始上課", en_example: "Begin the class.", syllable: "be-gin" },
+            { cn: "累", en: "tired", cn_example: "我很累了", en_example: "I am very tired.", syllable: "tired" },
+        ];
+
+        const grammarData = [
+            // 模式 B & C (句式) - 第二課的 15 個句子
+            // Rule 1: To indicate where you are, you use 在.
+            { rule: "S + 在 + Location (表示位置)", en: "Mum is in dining room", cn: "媽媽在飯廳" },
+            { rule: "S + 在 + Location (表示位置)", en: "Dad is in kitchen", cn: "爸爸在廚房" },
+            { rule: "S + 在 + Location (表示位置)", en: "Elder brother is in toliet", cn: "哥哥在廁所" },
+            { rule: "S + 在 + Location (表示位置)", en: "Younger brother is in bedroom", cn: "弟弟在睡房" },
+            // Rule 2: To indicate where you are and what you are doing there, you say the action after the location.
+            { rule: "S + 在 + Location + V/Action (表示位置和動作)", en: "Mum is having tea in dining room", cn: "媽媽在飯廳喝茶" },
+            { rule: "S + 在 + Location + V/Action (表示位置和動作)", en: "Dad is washing dishes in kitchen", cn: "爸爸在廚房洗碗" },
+            { rule: "S + 在 + Location + V/Action (表示位置和動作)", en: "Elder brother is reading in bedroom", cn: "哥哥在睡房看書" },
+            { rule: "S + 在 + Location + V/Action (表示位置和動作)", en: "Younger brother is playing computer games in living room", cn: "弟弟在客廳玩電腦遊戲" },
+            // Rule 3: To describe what objects a particular room has, you add 裏 after the room.
+            { rule: "Location + 裏 + 有 + Objects (描述房間物品)", en: "Living room has sofa, coffee table and television", cn: "客廳裏有沙發、茶几和電視機" },
+            { rule: "Location + 裏 + 有 + Objects (描述房間物品)", en: "My bedroom has bed, desk, bookshelf and wardrobe", cn: "我的書房裏有床、書桌、書架和衣櫃" },
+            // Rule 4: To indicate that something is done first in the morning, you say 一早就....
+            { rule: "一早就... (表示早上做的第一件事)", en: "I wake up early in the morning", cn: "我一早就起床" },
+            { rule: "一早就... (表示早上做的第一件事)", en: "Younger sister does homework early in the morning", cn: "妹妹一早就做功課" },
+            // Rule 5: To indicate that you do something immediately after you finish the previous action, you use 一... 就...
+            { rule: "一... 就... (表示緊接著完成的動作)", en: "After 國民 finishing his homework, he plays football", cn: "國民一做完功課就去踢球" },
+            { rule: "一... 就... (表示緊接著完成的動作)", en: "After John having his dinner, he watches TV", cn: "John 一吃完晚飯就看電視" },
+            { rule: "一... 就... (表示緊接著完成的動作)", en: "After we having dinner, we go ice skating", cn: "我們一吃完晚餐就去溜冰" }
+        ];
+
+
+        // === 全局狀態管理 ===
+        let appState = {
+            currentMode: 'study', // 'study', 'block', 'dictation'
+            currentLevel: 'all',
+            currentLevelData: [...vocabularyData], // 當前 Level 的單字資料
+            currentCardIndex: 0,
+            showSyllable: false,
+            // 語音相關
+            voices: [],
+            selectedVoice: null,
+            // 積木模式 B 相關
+            currentGrammarIndex: 0,
+            blockAnswer: [],
+            blockCorrectOrder: [],
+            // 聽寫模式 C 相關 (已更新)
+            dictationScore: 0, 
+            dictationQuestionCount: 10,
+            currentDictationIndex: 0,
+            currentDictationSet: [], // 當前 10 題的集合
+            dictationAnswer: [],
+            dictationCorrectOrder: []
+        };
+
+        // === 工具函數 ===
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // === 語音發音系統 (TTS) ===
+        const synth = window.speechSynthesis;
+        const voiceSelect = document.getElementById('voice-select');
+
+        function populateVoiceList() {
+            appState.voices = synth.getVoices().sort((a, b) => a.name.localeCompare(b.name));
+            voiceSelect.innerHTML = '<option value="">正在加載語音...</option>'; // 清空選項
+            
+            // --- 調整後的語音選擇邏輯 (優先 UK 英語) ---
+            
+            // 1. 優先尋找 UK 英語 (en-GB)
+            let defaultVoice = appState.voices.find(v => v.lang.includes('en-GB') || v.name.includes('Great Britain'));
+
+            // 2. 最後，回退到 US 英語或任何英語語音
+            if (!defaultVoice) {
+                defaultVoice = appState.voices.find(v => v.lang.includes('en-US') || v.lang.startsWith('en'));
+            }
+            
+            // ----------------------------------------------------
+
+            appState.voices.forEach(voice => {
+                // 只顯示英語語音，因為模式 B 和 C 需要標準的英語發音
+                if (voice.lang.startsWith('en')) {
+                    const option = document.createElement('option');
+                    option.textContent = `${voice.name} (${voice.lang})`;
+                    option.value = voice.name;
+                    option.setAttribute('data-lang', voice.lang);
+
+                    if (voice === defaultVoice) {
+                        option.selected = true;
+                        appState.selectedVoice = voice;
+                    }
+                    voiceSelect.appendChild(option);
+                }
+            });
+
+            // 如果 defaultVoice 還是 null (極少數情況)，使用第一個可用的語音
+            if (!appState.selectedVoice && appState.voices.length > 0) {
+                appState.selectedVoice = appState.voices.find(v => v.lang.startsWith('en'));
+                if (appState.selectedVoice) {
+                    voiceSelect.value = appState.selectedVoice.name;
+                }
+            }
+
+            voiceSelect.onchange = () => {
+                const voiceName = voiceSelect.value;
+                appState.selectedVoice = appState.voices.find(v => v.name === voiceName);
+            };
+        }
+
+        if (synth.onvoiceschanged !== undefined) {
+            synth.onvoiceschanged = populateVoiceList;
+        } else {
+            // 如果瀏覽器沒有 onvoiceschanged 事件，等待一段時間再嘗試加載
+            setTimeout(populateVoiceList, 500);
+        }
+
+        function speakText(text) {
+            if (!synth) return console.error('瀏覽器不支持語音合成.');
+            if (synth.speaking) {
+                synth.cancel(); // 停止當前的語音
+            }
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.voice = appState.selectedVoice;
+            
+            // 確保使用英語發音
+            if (appState.selectedVoice) {
+                utterance.lang = appState.selectedVoice.lang;
+            } else {
+                utterance.lang = 'en-US';
+            }
+
+            utterance.rate = 0.9; // 稍微慢一點，方便學習
+
+            synth.speak(utterance);
+        }
+
+        // === 資料分組與 Level 設置 ===
+
+        function setupLevels() {
+            const numWords = vocabularyData.length;
+            const levelCount = Math.ceil(numWords / 10);
+            const levelSelect = document.getElementById('level-select');
+            
+            // 清空舊選項，保留 "全部單字"
+            levelSelect.innerHTML = '<option value="all">全部單字</option>';
+
+            for (let i = 1; i <= levelCount; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = `第 ${i} 組 (單字 ${((i - 1) * 10) + 1} - ${Math.min(i * 10, numWords)})`;
+                levelSelect.appendChild(option);
+            }
+        }
+
+        function loadLevelData() {
+            appState.currentLevel = document.getElementById('level-select').value;
+            appState.currentCardIndex = 0;
+
+            if (appState.currentLevel === 'all') {
+                appState.currentLevelData = [...vocabularyData];
+            } else {
+                const levelIndex = parseInt(appState.currentLevel) - 1;
+                const start = levelIndex * 10;
+                const end = start + 10;
+                appState.currentLevelData = vocabularyData.slice(start, end);
+            }
+
+            // 只在模式 A 下重新渲染
+            if (appState.currentMode === 'study') {
+                renderStudyCard();
+            }
+        }
+
+
+        // === 模式切換邏輯 ===
+        function changeMode(mode) {
+            appState.currentMode = mode;
+            ['study', 'block', 'dictation'].forEach(m => {
+                const tab = document.getElementById(`tab-${m}`);
+                const content = document.getElementById(`mode-${m}`);
+                
+                if (m === mode) {
+                    tab.classList.add('bg-sky-500', 'text-white');
+                    tab.classList.remove('bg-gray-100', 'text-gray-700');
+                    content.classList.remove('hidden');
+                } else {
+                    tab.classList.remove('bg-sky-500', 'text-white');
+                    tab.classList.add('bg-gray-100', 'text-gray-700');
+                    content.classList.add('hidden');
+                }
+            });
+
+            // 根據模式初始化內容
+            if (mode === 'study') {
+                loadLevelData(); // 重新載入單字卡資料
+            } else if (mode === 'block') {
+                loadNextGrammar(true); // 初始化積木模式
+            } else if (mode === 'dictation') {
+                resetDictationGame(); // 初始化聽寫模式
+            }
+        }
+
+        // === 模式 A: 學習單字卡 ===
+
+        function renderStudyCard() {
+            const data = appState.currentLevelData[appState.currentCardIndex];
+            const cardContainer = document.getElementById('flashcard-container');
+            
+            if (!data) {
+                document.getElementById('card-cn-text').textContent = "本組別無更多單字";
+                document.getElementById('card-en-text').textContent = "No more words in this level";
+                // 由於 UI 改變，需要確保所有元素都被處理
+                document.getElementById('card-cn-back-text').textContent = "---";
+                document.getElementById('card-cn-example-text').textContent = "---";
+                document.getElementById('card-en-example-text').textContent = "---";
+                document.getElementById('card-syllable-text').textContent = "";
+                document.getElementById('study-progress').textContent = "進度: 0 / 0";
+                return;
+            }
+
+            // 單字卡內容渲染
+            // 正面
+            document.getElementById('card-cn-text').textContent = data.cn;
+            
+            // 背面 (已更新)
+            document.getElementById('card-cn-back-text').textContent = data.cn;
+            document.getElementById('card-en-text').textContent = data.en;
+            document.getElementById('card-cn-example-text').textContent = data.cn_example;
+            document.getElementById('card-en-example-text').textContent = data.en_example;
+            document.getElementById('card-syllable-text').textContent = data.syllable;
+            
+            // 顯示或隱藏音節
+            if (appState.showSyllable) {
+                document.getElementById('card-syllable-text').classList.remove('hidden');
+            } else {
+                document.getElementById('card-syllable-text').classList.add('hidden');
+            }
+
+            // 更新進度
+            document.getElementById('study-progress').textContent = 
+                `進度: ${appState.currentCardIndex + 1} / ${appState.currentLevelData.length}`;
+
+            // 確保卡片是正面朝上
+            cardContainer.classList.remove('flipped');
+        }
+
+        function flipCard() {
+            document.getElementById('flashcard-container').classList.toggle('flipped');
+        }
+
+        function prevCard() {
+            appState.currentCardIndex = (appState.currentCardIndex - 1 + appState.currentLevelData.length) % appState.currentLevelData.length;
+            renderStudyCard();
+        }
+
+        function nextCard() {
+            appState.currentCardIndex = (appState.currentCardIndex + 1) % appState.currentLevelData.length;
+            renderStudyCard();
+        }
+
+        function speakCurrentWord() {
+            const data = appState.currentLevelData[appState.currentCardIndex];
+            if (data) {
+                speakText(data.en);
+            }
+        }
+        
+        function toggleSyllable() {
+            appState.showSyllable = !appState.showSyllable;
+            // 保持在當前卡片，只是切換音節顯示
+            if (appState.showSyllable) {
+                document.getElementById('card-syllable-text').classList.remove('hidden');
+            } else {
+                document.getElementById('card-syllable-text').classList.add('hidden');
+            }
+        }
+
+
+        // === 模式 B: 積木 (中文句式重組) ===
+        
+        function loadNextGrammar(reset = false) {
+            if (reset) {
+                appState.currentGrammarIndex = 0;
+            } else {
+                appState.currentGrammarIndex = (appState.currentGrammarIndex + 1) % grammarData.length;
+            }
+
+            const data = grammarData[appState.currentGrammarIndex];
+            
+            document.getElementById('block-grammar-rule').textContent = data.rule;
+            document.getElementById('block-en-sentence').textContent = data.en;
+            document.getElementById('block-message').textContent = '';
+
+            // 設置正確的順序 (中文句子以字為單位拆分)
+            const cleanCN = data.cn.replace(/[，。、；：！「」]/g, '');
+            appState.blockCorrectOrder = cleanCN.split('').filter(s => s.trim().length > 0);
+            
+            const scrambledParts = shuffleArray([...appState.blockCorrectOrder]);
+
+            appState.blockAnswer = [];
+            renderBlockGame(scrambledParts);
+        }
+
+        function renderBlockGame(scrambledParts) {
+            const answerArea = document.getElementById('block-answer-area');
+            const scrambledArea = document.getElementById('block-scrambled-area');
+            answerArea.innerHTML = '';
+            scrambledArea.innerHTML = '';
+
+            // 渲染答案區積木
+            appState.blockAnswer.forEach((part, index) => {
+                const btn = createBlockButton(part, 'answer', index);
+                answerArea.appendChild(btn);
+            });
+
+            // 渲染隨機積木區
+            scrambledParts.forEach((part, index) => {
+                const btn = createBlockButton(part, 'scrambled', index);
+                scrambledArea.appendChild(btn);
+            });
+        }
+
+        function createBlockButton(text, type, index) {
+            const btn = document.createElement('button');
+            btn.textContent = text;
+            btn.className = `block-button p-3 text-lg font-bold rounded-lg transition text-white ${type === 'answer' ? 'bg-indigo-500' : 'bg-sky-600 hover:bg-sky-700'}`;
+            
+            if (type === 'scrambled') {
+                btn.onclick = (event) => moveBlockToAnswer(text, index, event.currentTarget);
+            } else {
+                btn.onclick = (event) => moveBlockToScrambled(text, index, event.currentTarget);
+            }
+
+            return btn;
+        }
+
+        /**
+         * FIX: 移除重複渲染的邏輯，現在只依賴 `renderBlockGame` 進行單次渲染。
+         */
+        function moveBlockToAnswer(text, originalIndex, button) {
+            appState.blockAnswer.push(text);
+            
+            // 獲取目前在 scrambled area 中剩下的積木 (排除剛點擊的那個)
+            const scrambledArea = document.getElementById('block-scrambled-area');
+            const remainingScrambled = Array.from(scrambledArea.children)
+                .filter(child => child !== button)
+                .map(b => b.textContent);
+
+            // 執行完整的重新渲染
+            renderBlockGame(remainingScrambled);
+            
+            document.getElementById('block-message').textContent = ''; // 清除提示
+        }
+
+        /**
+         * FIX: 移除重複渲染的邏輯，現在只依賴 `renderBlockGame` 進行單次渲染。
+         */
+        function moveBlockToScrambled(text, indexToRemove, button) {
+            // 從答案區移除
+            appState.blockAnswer.splice(indexToRemove, 1);
+            
+            // 獲取目前在 scrambled area 中已有的積木，並加上剛移回的那個
+            const currentScrambled = Array.from(document.getElementById('block-scrambled-area').children).map(b => b.textContent);
+            currentScrambled.push(text);
+
+            // 執行完整的重新渲染
+            renderBlockGame(currentScrambled);
+
+            document.getElementById('block-message').textContent = ''; // 清除提示
+        }
+
+        function resetBlockGame() {
+            loadNextGrammar(true); // 重新載入當前句子
+        }
+
+        function checkBlockAnswer() {
+            const userAnswer = appState.blockAnswer.join('');
+            const correctAnswer = grammarData[appState.currentGrammarIndex].cn.replace(/[，。、；：！「」]/g, ''); // 移除標點的正確答案
+            const messageEl = document.getElementById('block-message');
+
+            if (userAnswer === correctAnswer) {
+                messageEl.textContent = '🎉 太棒了! 答案完全正確!';
+                messageEl.className = 'text-center mt-4 text-xl font-semibold text-green-600 min-h-[30px]';
+                // 成功後可以自動切換到下一個句子
+                setTimeout(() => loadNextGrammar(false), 1500);
+            } else {
+                messageEl.textContent = '😥 不對喔，再試試看! 正確答案是: ' + grammarData[appState.currentGrammarIndex].cn;
+                messageEl.className = 'text-center mt-4 text-xl font-semibold text-red-600 min-h-[30px]';
+            }
+        }
+
+        // === 模式 C: 聽寫 (英文句子重組) - 使用 grammarData ===
+
+        function updateDictationScoreDisplay() {
+            const stars = '⭐'.repeat(appState.dictationScore);
+            const remaining = '⚫'.repeat(appState.dictationQuestionCount - appState.dictationScore);
+            document.getElementById('dictation-score-display').innerHTML = 
+                `分數: ${appState.dictationScore} / ${appState.dictationQuestionCount} ${stars}${remaining}`;
+            document.getElementById('dictation-progress').textContent = 
+                `進度: ${appState.currentDictationIndex + 1} / ${appState.dictationQuestionCount}`;
+        }
+        
+        function resetDictationGame() {
+            // 1. 重新洗牌並設定 10 題 (使用 grammarData)
+            const shuffled = shuffleArray([...grammarData]);
+            // 由於 grammarData 只有 15 個句子，我們取最多 10 個
+            appState.dictationQuestionCount = Math.min(10, grammarData.length); 
+            appState.currentDictationSet = shuffled.slice(0, appState.dictationQuestionCount);
+            
+            // 2. 重置狀態
+            appState.currentDictationIndex = -1; // 設置為 -1，讓 loadNextDictation() 從 0 開始
+            appState.dictationScore = 0;
+            
+            // 3. 載入第一道題
+            loadNextDictation();
+        }
+
+        function loadNextDictation() {
+            appState.currentDictationIndex++; // 下一題
+            
+            // 檢查是否結束回合
+            if (appState.currentDictationIndex >= appState.dictationQuestionCount) {
+                // 結束回合
+                const finalStars = '⭐'.repeat(appState.dictationScore);
+                document.getElementById('dictation-message').innerHTML = `
+                    <div class="p-4 bg-green-100 rounded-lg">
+                        <p class="text-3xl font-bold text-green-700">回合結束!</p>
+                        <p class="text-xl mt-2 text-green-800">您獲得了 ${appState.dictationScore} / ${appState.dictationQuestionCount} 粒星星！</p>
+                        <p class="text-5xl mt-4">${finalStars}</p>
+                    </div>
+                `;
+                document.getElementById('dictation-check-button').classList.add('hidden');
+                document.getElementById('dictation-next-button').classList.add('hidden');
+                document.getElementById('dictation-progress').textContent = `回合結束`;
+                return;
+            }
+
+            const data = appState.currentDictationSet[appState.currentDictationIndex];
+            
+            // UI 重設
+            // 顯示中文句子作為提示
+            document.getElementById('dictation-cn-word').textContent = data.cn; 
+            document.getElementById('dictation-message').textContent = '';
+            document.getElementById('dictation-check-button').classList.remove('hidden');
+            document.getElementById('dictation-next-button').classList.add('hidden');
+            document.getElementById('dictation-next-button').textContent = "下一題"; // 重設按鈕文字
+
+            // 播放英文句子音檔
+            speakText(data.en);
+
+            // 設置正確的英文單字順序 (去除英文句子的標點符號，並以空格分隔)
+            const cleanEN = data.en.replace(/[.,!?;:]/g, ''); 
+            const correctWords = cleanEN.split(' ').filter(word => word.length > 0);
+            appState.dictationCorrectOrder = correctWords;
+            
+            // 打亂英文單字
+            const scrambledWords = shuffleArray([...correctWords]);
+
+            appState.dictationAnswer = [];
+            renderDictationGame(scrambledWords);
+            updateDictationScoreDisplay();
+        }
+
+        function renderDictationGame(scrambledWords) {
+            const answerArea = document.getElementById('dictation-answer-area');
+            const scrambledArea = document.getElementById('dictation-scrambled-area');
+            answerArea.innerHTML = '';
+            scrambledArea.innerHTML = '';
+
+            // 渲染答案區積木 (紅色積木)
+            appState.dictationAnswer.forEach((part, index) => {
+                const btn = createDictationBlock(part, 'answer', index);
+                answerArea.appendChild(btn);
+            });
+
+            // 渲染隨機積木區 (黃色積木)
+            scrambledWords.forEach((part, index) => {
+                const btn = createDictationBlock(part, 'scrambled', index);
+                scrambledArea.appendChild(btn);
+            });
+        }
+
+        function createDictationBlock(text, type, index) {
+            const btn = document.createElement('button');
+            btn.textContent = text;
+            // 模式 C 使用紅色 (答案區) 和 黃色 (積木區)
+            btn.className = `block-button dictation-block p-3 text-lg font-bold rounded-lg transition ${type === 'answer' ? 'bg-red-500 text-white' : 'bg-yellow-600 text-white hover:bg-yellow-700'}`;
+            
+            if (type === 'scrambled') {
+                btn.onclick = (event) => moveDictationBlockToAnswer(text, index, event.currentTarget);
+            } else {
+                btn.onclick = (event) => moveDictationBlockToScrambled(text, index, event.currentTarget);
+            }
+
+            return btn;
+        }
+
+        /**
+         * FIX: 移除重複渲染的邏輯，現在只依賴 `renderDictationGame` 進行單次渲染。
+         */
+        function moveDictationBlockToAnswer(text, originalIndex, button) {
+            // 1. 更新內部狀態
+            appState.dictationAnswer.push(text);
+
+            // 2. 獲取目前在 scrambled area 中剩下的積木 (排除剛點擊的那個)
+            const scrambledArea = document.getElementById('dictation-scrambled-area');
+            const remainingScrambled = Array.from(scrambledArea.children)
+                .filter(child => child !== button)
+                .map(b => b.textContent);
+            
+            // 3. 執行完整的重新渲染
+            renderDictationGame(remainingScrambled);
+            
+            document.getElementById('dictation-message').textContent = ''; 
+        }
+
+        /**
+         * FIX: 移除重複渲染的邏輯，現在只依賴 `renderDictationGame` 進行單次渲染。
+         */
+        function moveDictationBlockToScrambled(text, indexToRemove, button) {
+            // 1. 從答案區移除
+            appState.dictationAnswer.splice(indexToRemove, 1);
+            
+            // 2. 獲取目前在 scrambled area 中已有的積木，並加上剛移回的那個
+            const currentScrambled = Array.from(document.getElementById('dictation-scrambled-area').children).map(b => b.textContent);
+            currentScrambled.push(text);
+
+            // 3. 執行完整的重新渲染
+            renderDictationGame(currentScrambled);
+            
+            document.getElementById('dictation-message').textContent = ''; 
+        }
+
+        function speakCurrentDictation() {
+            const data = appState.currentDictationSet[appState.currentDictationIndex];
+            if (data) {
+                speakText(data.en); // 播放英文句子
+            }
+        }
+
+        function checkDictationAnswer() {
+            // 答案檢查時忽略大小寫，並去除所有標點符號，只比較單字順序
+            const userAnswer = appState.dictationAnswer.join(' ').toLowerCase();
+            const correctAnswer = appState.dictationCorrectOrder.join(' ').toLowerCase();
+            const messageEl = document.getElementById('dictation-message');
+
+            if (userAnswer === correctAnswer) {
+                // 答對了
+                appState.dictationScore++;
+                messageEl.textContent = '✨ 完美! 句子重組正確! (+1 ⭐)';
+                messageEl.className = 'text-center mt-4 text-xl font-semibold text-green-600 min-h-[30px]';
+            } else {
+                // 答錯了
+                // 由於正確答案已經儲存在 appState.dictationCorrectOrder 中，可以直接使用
+                messageEl.textContent = '🤔 差一點! 正確答案是: ' + appState.dictationCorrectOrder.join(' ');
+                messageEl.className = 'text-center mt-4 text-xl font-semibold text-red-600 min-h-[30px]';
+            }
+            
+            // 隱藏檢查按鈕，顯示下一題按鈕
+            document.getElementById('dictation-check-button').classList.add('hidden');
+            if (appState.currentDictationIndex < appState.dictationQuestionCount - 1) {
+                document.getElementById('dictation-next-button').classList.remove('hidden');
+            } else {
+                // 最後一題，顯示下一題按鈕以結束回合
+                document.getElementById('dictation-next-button').classList.remove('hidden');
+                document.getElementById('dictation-next-button').textContent = "查看結果";
+            }
+            updateDictationScoreDisplay();
+        }
+
+
+        // === 應用程式初始化 ===
+        function initializeApp() {
+            setupLevels();
+            loadLevelData(); // 預設載入 Level 1 或 All (用於 Mode A)
+            changeMode('study'); // 預設進入學習模式
+            
+            // 確保語音列表在網頁加載後能被填充
+            if (synth.getVoices().length > 0) {
+                populateVoiceList();
+            }
+        }
+        
+        // 確保所有 DOM 元素加載完成後再執行初始化
+        window.onload = initializeApp;
+    </script>
+</body>
+</html>
